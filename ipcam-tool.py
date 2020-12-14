@@ -8,11 +8,18 @@ from datetime import *
 import requests
 from threading import Thread
 
+debug = False
+
 #################################################################
 
 basepath = 'C:\\cam\\'
 
 logfile = basepath + 'log.txt'
+
+win_w = 768
+win_h = 432 # 1080p / 2.5
+
+fps_default = 25.0
 
 # an array of 8 key-value pairs for each camera instance
 # (string) name:                anything to identify the camera (affects folder and file names)
@@ -24,25 +31,60 @@ logfile = basepath + 'log.txt'
 # (bool)   show_overlay:        if motion detection is shown in the window
 # (bool)   update_screen:       if the desktop window is updated
 devices = [
-#    {
-#        "name": "doorbell", 
-#        "url": "rtsp://admin:056565099@192.168.0.241:554/live/av0", 
-#        "record_motion": True, 
-#        "motion_sensitivity": 100, 
-#        "record_timelapse": True, 
-#        "timelapse_speed": 0x20, 
-#        "show_overlay": False, 
-#        "update_screen": True
-#    },
     {
-        "name": "cam3", 
-        "url": "rtsp://192.168.178.122:8554", 
-        "record_motion": False, 
+        "enabled": False,
+        "name": "cam0", 
+        "url": "rtsp://admin:password@192.168.2.10:554/live/av0", 
+        "record_motion": True, 
         "motion_sensitivity": 100, 
-        "record_timelapse": True, 
-        "timelapse_speed": 0x40, 
+        "record_timelapse": False, 
+        "timelapse_speed": 8, 
         "show_overlay": False, 
-        "update_screen": True
+        "update_screen": False
+    },
+    {
+        "enabled": True,
+        "name": "cam1",
+        "url": "rtsp://admin:password@192.168.2.11:554/live/av0", 
+        "record_motion": True, 
+        "motion_sensitivity": 100, 
+        "record_timelapse": False, 
+        "timelapse_speed": 8, 
+        "show_overlay": False, 
+        "update_screen": False
+    },
+    {
+        "enabled": True,
+        "name": "cam2",
+        "url": "rtsp://192.168.2.12:8554",
+        "record_motion": True, 
+        "motion_sensitivity": 100, 
+        "record_timelapse": False, 
+        "timelapse_speed": 8, 
+        "show_overlay": False, 
+        "update_screen": False
+    },
+    {
+        "enabled": True,
+        "name": "cam3", 
+        "url": "rtsp://192.168.2.13:8554", 
+        "record_motion": True, 
+        "motion_sensitivity": 100, 
+        "record_timelapse": False, 
+        "timelapse_speed": 8, 
+        "show_overlay": False, 
+        "update_screen": False
+    },
+    {
+        "enabled": True,
+        "name": "cam4", 
+        "url": "rtsp://192.168.2.14:8554", 
+        "record_motion": True, 
+        "motion_sensitivity": 100, 
+        "record_timelapse": False, 
+        "timelapse_speed": 16, 
+        "show_overlay": False, 
+        "update_screen": False
     }
 ]
 
@@ -87,8 +129,9 @@ display_help()
 # for details see https://docs.opencv.org/master/dd/d43/tutorial_py_video_display.html#nav-path:~:text=Saving%20a%20Video
 fourcc = cv2.VideoWriter_fourcc(*'DIVX')
 
-def capture_device_thread(dev):
-    global fourcc, basepath
+def capture_device_thread(dev, index):
+    log(dev["name"], "started thread " + str(index))
+    global fourcc, basepath, win_w, win_h, fps_default
 
     exit_thread = False
     update_screen = dev["update_screen"]
@@ -99,6 +142,22 @@ def capture_device_thread(dev):
     show_overlay = dev["show_overlay"]
     videopath = basepath + dev["name"] + "\\"
     windowname = "[" + dev["name"] + "] ipcam tool"
+    fps = fps_default
+    
+    
+    if debug:
+        update_screen = True
+        record_motion = False
+        record_timelapse = False
+        show_overlay = True
+        windowname = windowname + " (debug)"
+    
+    log(dev["name"], "video path: " + videopath)
+    
+    # check if there's a directory for this camera already
+    if not os.path.isdir(basepath + dev["name"]):
+        os.mkdir(basepath + dev["name"])
+        log(dev["name"], "video path didn't exist and was created")
 
     out = None
     out_timelapse = None
@@ -109,15 +168,27 @@ def capture_device_thread(dev):
     framecounter = 0
 
     while not exit_thread:
-        log(dev["name"], "started thread")
+        if cv2.getWindowProperty('window-name', 0) == -1:
+            cv2.namedWindow(windowname, cv2.WINDOW_NORMAL)
+            
+            cv2.resizeWindow(windowname, win_w, win_h)
+            
+            # get correct window position
+            win_x = int(((index//4)*2 + index%2) * win_w)
+            win_y = int(((index//2) % 2) * win_h * 1.07)
+            
+            cv2.moveWindow(windowname, win_x, win_y)
+            
+            log(dev["name"], "preview window opened at " + str(win_x) + "/" + str(win_y))
         
         cap = cv2.VideoCapture(dev["url"])
         
         width = cap.get(cv2.CAP_PROP_FRAME_WIDTH) # float
         height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT) # float
+        if cap.get(cv2.CAP_PROP_FPS) > 0 and cap.get(cv2.CAP_PROP_FPS) <= 60: # failsafe
+            fps = cap.get(cv2.CAP_PROP_FPS) # float
 
-        log(dev["name"], "video stream size: " + str(int(width)) + "x" + str(int(height)))
-        log(dev["name"], "video path: " + videopath)
+        log(dev["name"], "video stream opened: " + str(int(width)) + "x" + str(int(height)) + "@" + str(int(fps)) + "fps")
 
         frame_with_motion = False
         
@@ -142,7 +213,7 @@ def capture_device_thread(dev):
                             os.remove(file_timelapse)
                         out_timelapse = cv2.VideoWriter(file_timelapse, fourcc, 60.0, (int(width),int(height)))
                         
-                        log(dev["name"], "started recording")
+                        log(dev["name"], "started recording timelapse")
                         log(dev["name"], "writing to " + file_timelapse)
                     else:
                         if show_overlay:
@@ -200,7 +271,7 @@ def capture_device_thread(dev):
                         if out:
                             out.release()
                             out = False
-                            log(dev["name"], "stopped recording after " + str(num_frames_motion) + " frames with motion")
+                            log(dev["name"], "stopped recording motion after " + str(num_frames_motion) + " frames with motion (" + str(int(num_frames_motion/fps)) + "s)")
                         num_frames_motion = 0
                         
                     if num_frames_motion > 15:
@@ -238,51 +309,68 @@ def capture_device_thread(dev):
                 log(dev["name"], "thread stopped")
                 exit_thread = True
                 break
+                
             elif key == ord('r'): # record motion
                 record_motion = not record_motion
                 log(dev["name"], "record_motion = " + str(record_motion))
+                if out:
+                    out.release()
+                    out = None
+                    log(dev["name"], "motion recording ended")
+                
             elif key == ord('o'): # show motion detection overlay
                 show_overlay = not show_overlay
                 log(dev["name"], "show_overlay = " + str(show_overlay))
+                
             elif key == ord('u'): # show every frame in a window
                 update_screen = not update_screen
                 log(dev["name"], "update_screen = " + str(update_screen))
+                
             elif key == ord('t'): # record timelapse
                 record_timelapse = not record_timelapse
                 log(dev["name"], "record_timelapse = " + str(record_timelapse))
-                log(dev["name"], "timelapse_speed = " + str(timelapse_speed << 1))
+                
                 if out_timelapse:
                     log(dev["name"], "timelapse ended")
                     out_timelapse.release()
                     out_timelapse = None
+                else:
+                    log(dev["name"], "timelapse_speed = " + str(timelapse_speed << 1) + "x")
+                    
             elif key == ord('-'): # timelapse speed slower
                 if timelapse_speed >> 1 > 0:
                     timelapse_speed = timelapse_speed >> 1
-                log(dev["name"], "timelapse_speed = " + str(timelapse_speed << 1))
+                log(dev["name"], "timelapse_speed = " + str(timelapse_speed << 1) + "x")
+                
             elif key == ord('+'): # timelapse speed faster
                 timelapse_speed = timelapse_speed << 1
-                log(dev["name"], "timelapse_speed = " + str(timelapse_speed << 1))
+                log(dev["name"], "timelapse_speed = " + str(timelapse_speed << 1) + "x")
+                
             elif key == ord('h'): # display help message
                 display_help()
 
         # quit capturing device
         cap.release()
+        log(dev["name"], "capture device closed")
 
-        # quit timelapse recording if enabled
-        if out_timelapse:
-            log(dev["name"], "timelapse ended")
-            out_timelapse.release()
-        
-        # quit motion recording if enabled
-        if out:
-            out.release()
-            log(dev["name"], "motion recording ended")
+    # quit timelapse recording if enabled
+    if out_timelapse:
+        out_timelapse.release()
+        log(dev["name"], "timelapse ended")
+    
+    # quit motion recording if enabled
+    if out:
+        out.release()
+        log(dev["name"], "motion recording ended")
 
-        #cv2.destroyAllWindows()
-        
-        cv2.destroyWindow(windowname)
-        log(dev["name"], "thread exited")
+    #cv2.destroyAllWindows()
+    
+    cv2.destroyWindow(windowname)
+    log(dev["name"], "thread exited")
 
+index = 0
 for dev in devices:
-    t = Thread(target=capture_device_thread, args=(dev,))
-    t.start()
+    if dev["enabled"]:
+        t = Thread(target=capture_device_thread, args=(dev,index,))
+        t.start()
+        index = index + 1
