@@ -12,7 +12,7 @@ debug = False
 
 #################################################################
 
-basepath = 'C:\\cam\\'
+basepath = 'H:\\cam\\'
 
 logfile = basepath + 'log.txt'
 
@@ -32,60 +32,27 @@ fps_default = 25.0
 # (bool)   update_screen:       if the desktop window is updated
 devices = [
     {
-        "enabled": False,
+        "enabled": True,
         "name": "cam0", 
         "url": "rtsp://admin:password@192.168.2.10:554/live/av0", 
-        "record_motion": True, 
-        "motion_sensitivity": 100, 
-        "record_timelapse": False, 
-        "timelapse_speed": 8, 
-        "show_overlay": False, 
-        "update_screen": False
-    },
-    {
-        "enabled": True,
-        "name": "cam1",
-        "url": "rtsp://admin:password@192.168.2.11:554/live/av0", 
-        "record_motion": True, 
-        "motion_sensitivity": 100, 
-        "record_timelapse": False, 
-        "timelapse_speed": 8, 
-        "show_overlay": False, 
-        "update_screen": False
-    },
-    {
-        "enabled": True,
-        "name": "cam2",
-        "url": "rtsp://192.168.2.12:8554",
-        "record_motion": True, 
-        "motion_sensitivity": 100, 
-        "record_timelapse": False, 
-        "timelapse_speed": 8, 
-        "show_overlay": False, 
-        "update_screen": False
-    },
-    {
-        "enabled": True,
-        "name": "cam3", 
-        "url": "rtsp://192.168.2.13:8554", 
-        "record_motion": True, 
-        "motion_sensitivity": 100, 
-        "record_timelapse": False, 
-        "timelapse_speed": 8, 
-        "show_overlay": False, 
-        "update_screen": False
-    },
-    {
-        "enabled": True,
-        "name": "cam4", 
-        "url": "rtsp://192.168.2.14:8554", 
-        "record_motion": True, 
+        "record_motion": False, 
         "motion_sensitivity": 100, 
         "record_timelapse": False, 
         "timelapse_speed": 16, 
         "show_overlay": False, 
-        "update_screen": False
-    }
+        "update_screen": True
+    },
+    {
+        "enabled": True,
+        "name": "cam1", 
+        "url": "rtsp://admin:password@192.168.2.11:554/live/av0", 
+        "record_motion": False, 
+        "motion_sensitivity": 100, 
+        "record_timelapse": False, 
+        "timelapse_speed": 16, 
+        "show_overlay": False, 
+        "update_screen": True
+    },
 ]
 
 #################################################################
@@ -99,6 +66,7 @@ def display_help():
     print("# t = toggle record timelapse            #")
     print("# + = increase timelapse speed           #")
     print("# - = decrease timelapse speed           #")
+    print("# c = print current cam configuration    #")
     print("# q = quit application                   #")
     print("##########################################")
 
@@ -138,11 +106,23 @@ def capture_device_thread(dev, index):
     record_motion = dev["record_motion"]
     motion_sensitivity = dev["motion_sensitivity"]
     record_timelapse = dev["record_timelapse"]
-    timelapse_speed = dev["timelapse_speed"]
+    timelapse_speed = dev["timelapse_speed"]>>1
     show_overlay = dev["show_overlay"]
     videopath = basepath + dev["name"] + "\\"
     windowname = "[" + dev["name"] + "] ipcam tool"
     fps = fps_default
+    
+    log(dev["name"], ("settings:" + 
+        " update_screen=" + str(update_screen) + 
+        " record_motion=" + str(record_motion) + 
+        " motion_sensitivity=" + str(motion_sensitivity) + 
+        " record_timelapse=" + str(record_timelapse) + 
+        " timelapse_speed=" + str(timelapse_speed) + 
+        " show_overlay=" + str(show_overlay) + 
+        " videopath=" + videopath + 
+        " windowname=" + windowname + 
+        " fps=" + str(fps))
+    )
     
     
     if debug:
@@ -158,7 +138,11 @@ def capture_device_thread(dev, index):
     if not os.path.isdir(basepath + dev["name"]):
         os.mkdir(basepath + dev["name"])
         log(dev["name"], "video path didn't exist and was created")
-
+    
+    if not os.path.isdir(basepath + dev["name"] + "\\timelapse"):
+        os.mkdir(basepath + dev["name"] + "\\timelapse")
+        log(dev["name"], "timelapse path didn't exist and was created")
+        
     out = None
     out_timelapse = None
     baseline_image = None
@@ -208,7 +192,7 @@ def capture_device_thread(dev, index):
                 if record_timelapse and ((framecounter % timelapse_speed) == 0):
                     #print(framecounter)
                     if not out_timelapse:
-                        file_timelapse = get_file_path(dev["name"], True)
+                        file_timelapse = get_file_path(dev["name"] + "\\timelapse", True)
                         if os.path.isfile(file_timelapse):
                             os.remove(file_timelapse)
                         out_timelapse = cv2.VideoWriter(file_timelapse, fourcc, 60.0, (int(width),int(height)))
@@ -345,7 +329,14 @@ def capture_device_thread(dev, index):
             elif key == ord('+'): # timelapse speed faster
                 timelapse_speed = timelapse_speed << 1
                 log(dev["name"], "timelapse_speed = " + str(timelapse_speed << 1) + "x")
-                
+            
+            elif key == ord('c'): # display help message
+                log(dev["name"], "record_motion = " + str(record_motion))
+                log(dev["name"], "show_overlay = " + str(show_overlay))
+                log(dev["name"], "update_screen = " + str(update_screen))
+                log(dev["name"], "record_timelapse = " + str(record_timelapse))
+                log(dev["name"], "timelapse_speed = " + str(timelapse_speed << 1) + "x")
+            
             elif key == ord('h'): # display help message
                 display_help()
 
