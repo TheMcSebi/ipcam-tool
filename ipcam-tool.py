@@ -3,8 +3,10 @@ import os
 nogui = False
 
 if os.name == 'nt':
-    basepath = 'H:\\cam\\'
+    # Windows
+    basepath = 'H:\\cams\\'
 else:
+    # Linux
     basepath = '/media/hdd/cams/'
     nogui = True
 
@@ -13,11 +15,10 @@ logfile = basepath + 'log.txt'
 win_w = 768
 win_h = 432 # 1080p / 2.5
 
-fps_default = 25.0
 
-
-# an array of 8 key-value pairs for each camera instance
-# (string) name:                anything to identify the camera (affects folder and file names)
+# an array of 9 key-value pairs for each camera instance
+# (bool)   enabled:             if the camera is enabled during scriptn startup
+# (string) name:                anything to identify the camera (affects folder names)
 # (string) url:                 the streaming url, rtsp works, but everything cv2 supports should work too
 # (bool)   record_motion:       enable motion recording by default
 # (int)    motion_sensitivity:  min. area size of detected motion that gets recognized (smaller = more sensitive)
@@ -36,18 +37,18 @@ devices = [
         "record_timelapse": True, 
         "timelapse_speed": 256, 
         "show_overlay": False, 
-        "update_screen": False
+        "update_screen": True
     },
     {
         "enabled": True,
         "name": "cam1", 
         "url": "rtsp://admin:password@192.168.2.11:554/live/av0", 
-        "record_motion": False, 
+        "record_motion": True, 
         "motion_sensitivity": 100, 
-        "record_timelapse": True, 
+        "record_timelapse": False, 
         "timelapse_speed": 256, 
         "show_overlay": False, 
-        "update_screen": False
+        "update_screen": True
     },
 ]
 
@@ -55,10 +56,9 @@ devices = [
 
 debug = False
 
+# pip install numpy==1.19.3
 # pip install opencv-python
 import cv2
-#import cv2 as cv
-# pip install numpy==1.19.3
 import numpy as np
 import os
 from datetime import *
@@ -66,7 +66,6 @@ import requests
 from threading import Thread
 import signal
 import sys
-
 
 # Windows
 if os.name == 'nt':
@@ -79,18 +78,13 @@ else:
     import atexit
     from select import select
 
-
 class KBHit:
-
     def __init__(self):
         '''Creates a KBHit object that you can call to do various keyboard things.
         '''
-
         if os.name == 'nt':
             pass
-
         else:
-
             # Save the terminal settings
             self.fd = sys.stdin.fileno()
             self.new_term = termios.tcgetattr(self.fd)
@@ -103,31 +97,23 @@ class KBHit:
             # Support normal-terminal reset at exit
             atexit.register(self.set_normal_term)
 
-
     def set_normal_term(self):
         ''' Resets to normal terminal.  On Windows this is a no-op.
         '''
-
         if os.name == 'nt':
             pass
-
         else:
             termios.tcsetattr(self.fd, termios.TCSAFLUSH, self.old_term)
-
-
+    
     def getch(self):
         ''' Returns a keyboard character after kbhit() has been called.
             Should not be called in the same program as getarrow().
         '''
-
         s = ''
-
         if os.name == 'nt':
             return msvcrt.getch().decode('utf-8')
-
         else:
             return sys.stdin.read(1)
-
 
     def getarrow(self):
         ''' Returns an arrow-key code after kbhit() has been called. Codes are
@@ -137,25 +123,20 @@ class KBHit:
         3 : left
         Should not be called in the same program as getch().
         '''
-
         if os.name == 'nt':
             msvcrt.getch() # skip 0xE0
             c = msvcrt.getch()
             vals = [72, 77, 80, 75]
-
         else:
             c = sys.stdin.read(3)[2]
             vals = [65, 67, 66, 68]
-
         return vals.index(ord(c.decode('utf-8')))
-
-
+        
     def kbhit(self):
         ''' Returns True if keyboard character was hit, False otherwise.
         '''
         if os.name == 'nt':
             return msvcrt.kbhit()
-
         else:
             dr,dw,de = select([sys.stdin], [], [], 0)
             return dr != []
@@ -219,6 +200,15 @@ log("application", "started")
 log("application", "log file: " + logfile)
 log("application", "video base path: " + basepath)
 
+if not os.path.isdir(basepath):
+    os.mkdir(basepath)
+    log(devname, "base path didn't exist and was created")
+
+#if not os.path.isfile(logfile):
+#    os.touch(basepath)
+#    log(devname, "base path didn't exist and was created")
+
+
 display_help()
 
 kb = KBHit()
@@ -229,7 +219,7 @@ fourcc = cv2.VideoWriter_fourcc(*'DIVX')
 
 def capture_device_thread(dev, index):
     log(dev["name"], "started thread " + str(index))
-    global fourcc, basepath, win_w, win_h, fps_default, nogui
+    global fourcc, basepath, win_w, win_h, nogui, debug
 
     exit_thread = False
     update_screen = dev["update_screen"]
@@ -239,7 +229,7 @@ def capture_device_thread(dev, index):
     timelapse_speed = dev["timelapse_speed"]>>1
     show_overlay = dev["show_overlay"]
     windowname = "[" + dev["name"] + "] ipcam tool"
-    fps = fps_default
+    fps = 25.0
         
     log(dev["name"], ("settings:" + 
         "\n update_screen=" + str(update_screen) + 
@@ -299,8 +289,7 @@ def capture_device_thread(dev, index):
         frame_with_motion = False
         
         while(cap.isOpened()):
-
-            # check for esc key in console
+            # check for q key in console
             if kb.kbhit():
                 c = kb.getch()
                 #print(ord(c))
